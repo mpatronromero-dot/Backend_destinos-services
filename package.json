@@ -1,0 +1,26 @@
+{
+  "name": "backend-sucre-turistico",
+  "version": "1.0.0",
+  "description": "Backend completo con microservicios para Sucre Turistico",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "gateway": "node api-gateway.js",
+    "alojamientos": "node alojamiento-service.js",
+    "gastronomia": "node gastronomia-service.js",
+    "experiencias": "node experiencias-service.js",
+    "eventos": "node eventos-service.js",
+    "buscador": "node buscador-service.js",
+    "dev": "concurrently \"npm start\" \"npm run alojamientos\" \"npm run gastronomia\" \"npm run experiencias\" \"npm run eventos\" \"npm run buscador\" \"npm run gateway\""
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^18.0.5",
+    "express": "^4.18.2",
+    "http-proxy-middleware": "^2.0.6",
+    "mysql2": "^3.24.5"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
