@@ -11,13 +11,16 @@
     "experiencias": "node experiencias-service.js",
     "eventos": "node eventos-service.js",
     "buscador": "node buscador-service.js",
-    "dev": "concurrently \"npm start\" \"npm run alojamientos\" \"npm run gastronomia\" \"npm run experiencias\" \"npm run eventos\" \"npm run buscador\" \"npm run gateway\""
+    "auth": "node auth-service.js",
+    "dev": "concurrently \"npm start\" \"npm run alojamientos\" \"npm run gastronomia\" \"npm run experiencias\" \"npm run eventos\" \"npm run buscador\" \"npm run gateway\" \"npm run auth\""
   },
   "dependencies": {
+    "bcryptjs": "^3.0.3",
     "cors": "^2.8.5",
     "dotenv": "^18.0.5",
     "express": "^4.18.2",
     "http-proxy-middleware": "^2.0.6",
+    "jsonwebtoken": "^9.0.3",
     "mysql2": "^3.24.5"
   },
   "devDependencies": {

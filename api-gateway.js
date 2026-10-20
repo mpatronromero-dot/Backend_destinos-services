@@ -14,6 +14,7 @@ app.use('/api/gastronomia', createProxyMiddleware({ target: 'http://localhost:30
 app.use('/api/experiencias', createProxyMiddleware({ target: 'http://localhost:3004', changeOrigin: true }));
 app.use('/api/eventos', createProxyMiddleware({ target: 'http://localhost:3006', changeOrigin: true }));
 app.use('/api/buscador', createProxyMiddleware({ target: 'http://localhost:3007', changeOrigin: true }));
+app.use('/api/auth', createProxyMiddleware({ target: 'http://localhost:3008', changeOrigin: true }));
 
 app.get('/', (req, res) => {
   res.send('API Gateway de Sucre Turístico funcionando correctamente.');
