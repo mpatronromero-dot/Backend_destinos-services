@@ -2,6 +2,9 @@ const express = require('express');
 const cors = require('cors');
 require('dotenv').config();
 const mysql = require('mysql2/promise');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
 
 const db = mysql.createPool({
     host: process.env.DB_HOST,
@@ -17,35 +20,47 @@ const PORT = 3006;
 app.use(cors());
 app.use(express.json());
 
-// Ruta GET: Obtener todos los eventos
+// 1. Configurar subida de afiches (Imágenes)
+const dir = './uploads';
+if (!fs.existsSync(dir)){ fs.mkdirSync(dir); }
+app.use('/uploads', express.static('uploads'));
+
+const storage = multer.diskStorage({
+    destination: function (req, file, cb) { cb(null, 'uploads/') },
+    filename: function (req, file, cb) { cb(null, Date.now() + path.extname(file.originalname)) }
+});
+const upload = multer({ storage: storage });
+
+// 2. Ruta GET: Obtener todos los eventos ordenados por fecha más próxima
 app.get('/api/eventos', async (req, res) => {
     try {
-        const [rows] = await db.query('SELECT * FROM eventos');
-        res.json({ status: "success", data: rows });
+        // Usamos ORDER BY para que la agenda se dibuje en orden cronológico
+        const [rows] = await db.query('SELECT * FROM eventos ORDER BY fecha_inicio ASC');
+        // Devolvemos el array directo para facilitar el mapeo en el Front-End
+        res.json(rows);
     } catch (error) {
         console.error("Error obteniendo eventos:", error);
-        res.status(500).json({ status: "error", message: "Fallo al consultar la base de datos" });
+        res.status(500).json({ message: "Fallo al consultar la base de datos" });
     }
 });
 
-// Ruta POST: Guardar un nuevo evento
-app.post('/api/eventos', async (req, res) => {
+// 3. Ruta POST: Guardar un evento con su afiche físico
+app.post('/api/eventos', upload.single('imagen'), async (req, res) => {
     try {
-        const { nombre, fecha, municipio, descripcion } = req.body;
+        const { nombre, fecha_inicio, fecha_fin, municipio, descripcion } = req.body;
+
+        // Procesamos la foto si el usuario subió el afiche
+        const imagen_url = req.file ? `http://localhost:${PORT}/uploads/${req.file.filename}` : null;
 
         const [result] = await db.query(
-            'INSERT INTO eventos (nombre, fecha, municipio, descripcion) VALUES (?, ?, ?, ?)',
-            [nombre, fecha, municipio, descripcion]
+            'INSERT INTO eventos (nombre, fecha_inicio, fecha_fin, municipio, descripcion, imagen_url) VALUES (?, ?, ?, ?, ?, ?)',
+            [nombre, fecha_inicio, fecha_fin, municipio, descripcion, imagen_url]
         );
 
-        res.status(201).json({ 
-            status: "success", 
-            message: "Evento guardado correctamente", 
-            insertId: result.insertId 
-        });
+        res.status(201).json({ status: "success", insertId: result.insertId });
     } catch (error) {
         console.error("Error guardando el evento:", error);
-        res.status(500).json({ status: "error", message: "Fallo al guardar en la base de datos" });
+        res.status(500).json({ status: "error", message: "Fallo al guardar" });
     }
 });
 
