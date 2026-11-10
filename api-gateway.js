@@ -6,6 +6,10 @@ const app = express();
 const PORT = 3005;
 
 app.use(cors());
+app.use('/api/buscador', createProxyMiddleware({ 
+    target: 'http://localhost:3007', 
+    changeOrigin: true 
+}));
 
 // Redirección de rutas a microservicios
 app.use('/api/destinos', createProxyMiddleware({ target: 'http://localhost:3001', changeOrigin: true }));

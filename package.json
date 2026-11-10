@@ -15,6 +15,7 @@
     "dev": "concurrently \"npm start\" \"npm run alojamientos\" \"npm run gastronomia\" \"npm run experiencias\" \"npm run eventos\" \"npm run buscador\" \"npm run gateway\" \"npm run auth\""
   },
   "dependencies": {
+    "@elastic/elasticsearch": "^9.5.1",
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.5",
     "dotenv": "^18.0.5",
