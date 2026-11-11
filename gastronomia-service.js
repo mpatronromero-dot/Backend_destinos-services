@@ -1,120 +1,151 @@
 const express = require('express');
 const cors = require('cors');
-const jwt = require('jsonwebtoken'); // <-- Agregado para leer el Token
-require('dotenv').config();
+const jwt = require('jsonwebtoken');
 const mysql = require('mysql2/promise');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+require('dotenv').config();
+
+const uploadDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
+}
 
 const db = mysql.createPool({
-    host: process.env.DB_HOST,
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
-    database: process.env.DB_NAME,
-    port: process.env.DB_PORT
+    host: process.env.DB_HOST || 'localhost',
+    user: process.env.DB_USER || 'root',
+    password: process.env.DB_PASSWORD || '',
+    database: process.env.DB_NAME || 'sucre_turistico_db',
+    port: process.env.DB_PORT || 3306
 });
 
 const app = express();
-const PORT = 3003; 
+const PORT = process.env.PORT_GASTRONOMIA || 3003; 
 
 app.use(cors());
 app.use(express.json());
 
-// ==========================================
-// MIDDLEWARE DE SEGURIDAD 
-// ==========================================
-const verificarToken = (req, res, next) => {
-    // Busca el token en la cabecera 'Authorization' enviada desde el Front-End
+// Exponer públicamente la carpeta /uploads para cargar las imágenes desde la web
+app.use('/uploads', express.static(uploadDir));
+
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => cb(null, uploadDir),
+    filename: (req, file, cb) => cb(null, Date.now() + path.extname(file.originalname))
+});
+
+const upload = multer({ storage });
+
+const verificarTokenOpcional = (req, res, next) => {
     const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1]; // Extrae el token después de "Bearer "
-
-    if (!token) return res.status(403).json({ status: "error", message: "Acceso denegado. No hay token." });
-
+    const token = authHeader && authHeader.split(' ')[1];
+    if (!token) {
+        req.usuario = { id: 1 };
+        return next();
+    }
     try {
-        // Verifica el token (usar la misma clave secreta que en tu auth-service)
-        const decodificado = jwt.verify(token, process.env.JWT_SECRET || 'secreto_super_seguro');
-        req.usuario = decodificado; // Inyecta los datos del dueño (incluyendo su ID) en la petición
+        req.usuario = jwt.verify(token, process.env.JWT_SECRET || 'secreto_super_seguro');
         next();
     } catch (error) {
-        return res.status(401).json({ status: "error", message: "Token inválido o expirado" });
+        return res.status(401).json({ status: "error", message: "Token inválido" });
     }
 };
 
 // ==========================================
-// RUTAS PRIVADAS (Solo para dueños logueados)
+// RUTAS DE ESCRITURA
 // ==========================================
 
-// 1. Crear un Restaurante (Vinculado al usuario que inició sesión)
-app.post('/api/restaurantes', verificarToken, async (req, res) => {
+const crearRestauranteHandler = async (req, res) => {
     try {
-        const { nombre, municipio, tipo_comida, descripcion, direccion, imagen_portada } = req.body;
-        const usuario_id = req.usuario.id; // Extraemos el ID del token
+        const { nombre, municipio, tipo, tipo_comida, descripcion, direccion } = req.body;
+        const tipoFinal = tipo || tipo_comida || 'Gastronomía';
+        
+        const archivo = req.files && req.files.length > 0 ? req.files[0] : null;
+        const imagen_url = archivo ? `/uploads/${archivo.filename}` : '';
 
         const [result] = await db.query(
-            'INSERT INTO restaurantes (usuario_id, nombre, municipio, tipo_comida, descripcion, direccion, imagen_portada) VALUES (?, ?, ?, ?, ?, ?, ?)',
-            [usuario_id, nombre, municipio, tipo_comida, descripcion, direccion, imagen_portada]
+            'INSERT INTO gastronomia (nombre, municipio, tipo, direccion, descripcion, imagen_url) VALUES (?, ?, ?, ?, ?, ?)',
+            [nombre, municipio, tipoFinal, direccion || '', descripcion || '', imagen_url]
         );
 
-        res.status(201).json({ status: "success", message: "Restaurante registrado", insertId: result.insertId });
-    } catch (error) {
-        console.error("Error guardando restaurante:", error);
-        res.status(500).json({ status: "error", message: "Fallo al guardar el restaurante" });
-    }
-});
-
-// 2. Agregar un Plato a la carta de un Restaurante
-app.post('/api/platos', verificarToken, async (req, res) => {
-    try {
-        const { restaurante_id, nombre_plato, descripcion, precio, foto_url } = req.body;
-
-        // Opcional: Validar que el restaurante_id le pertenezca a req.usuario.id antes de insertar
-
-        const [result] = await db.query(
-            'INSERT INTO platos (restaurante_id, nombre_plato, descripcion, precio, foto_url) VALUES (?, ?, ?, ?, ?)',
-            [restaurante_id, nombre_plato, descripcion, precio, foto_url]
-        );
-
-        res.status(201).json({ status: "success", message: "Plato agregado al menú", insertId: result.insertId });
-    } catch (error) {
-        console.error("Error guardando plato:", error);
-        res.status(500).json({ status: "error", message: "Fallo al guardar el plato" });
-    }
-});
-
-// ==========================================
-// RUTAS PÚBLICAS (Para los turistas en la web)
-// ==========================================
-
-// 3. Obtener el catálogo de restaurantes para la vista pública
-app.get('/api/restaurantes', async (req, res) => {
-    try {
-        const [rows] = await db.query('SELECT * FROM restaurantes ORDER BY created_at DESC');
-        res.json({ status: "success", data: rows });
-    } catch (error) {
-        console.error("Error obteniendo restaurantes:", error);
-        res.status(500).json({ status: "error", message: "Fallo al consultar la base de datos" });
-    }
-});
-
-// 4. Obtener un restaurante específico con su menú de platos
-app.get('/api/restaurantes/:id/menu', async (req, res) => {
-    try {
-        const [restaurante] = await db.query('SELECT * FROM restaurantes WHERE id = ?', [req.params.id]);
-        if (restaurante.length === 0) return res.status(404).json({ status: "error", message: "Restaurante no encontrado" });
-
-        const [platos] = await db.query('SELECT * FROM platos WHERE restaurante_id = ?', [req.params.id]);
-
-        res.json({ 
+        res.status(201).json({ 
             status: "success", 
-            data: { 
-                restaurante: restaurante[0], 
-                menu: platos 
-            } 
+            message: "Restaurante registrado", 
+            id: result.insertId,
+            insertId: result.insertId 
         });
     } catch (error) {
-        console.error("Error obteniendo el menú:", error);
-        res.status(500).json({ status: "error", message: "Fallo al consultar la base de datos" });
+        console.error("❌ Error guardando restaurante en MySQL:", error);
+        res.status(500).json({ status: "error", message: error.message });
+    }
+};
+
+const crearPlatoHandler = async (req, res) => {
+    try {
+        const { restaurante_id, nombre, nombre_plato, descripcion, precio } = req.body;
+        const nombreFinal = nombre || nombre_plato;
+        
+        const archivo = req.files && req.files.length > 0 ? req.files[0] : null;
+        const imagen_url = archivo ? `/uploads/${archivo.filename}` : '';
+
+        const [result] = await db.query(
+            'INSERT INTO platos (restaurante_id, nombre, precio, descripcion, imagen_url) VALUES (?, ?, ?, ?, ?)',
+            [restaurante_id, nombreFinal, precio || 0, descripcion || '', imagen_url]
+        );
+
+        res.status(201).json({ 
+            status: "success", 
+            message: "Plato guardado", 
+            id: result.insertId,
+            insertId: result.insertId 
+        });
+    } catch (error) {
+        console.error("❌ Error guardando plato en MySQL:", error);
+        res.status(500).json({ status: "error", message: error.message });
+    }
+};
+
+app.post(['/api/gastronomia', '/api/restaurantes'], verificarTokenOpcional, upload.any(), crearRestauranteHandler);
+app.post(['/api/platos', '/api/gastronomia/platos'], verificarTokenOpcional, upload.any(), crearPlatoHandler);
+
+// ==========================================
+// RUTAS DE LECTURA (PÚBLICAS)
+// ==========================================
+
+// 1. Obtener todos los restaurantes
+app.get(['/api/gastronomia', '/api/restaurantes'], async (req, res) => {
+    try {
+        const [rows] = await db.query('SELECT * FROM gastronomia ORDER BY id DESC');
+        res.json({ status: "success", data: rows });
+    } catch (error) {
+        res.status(500).json({ status: "error", message: "Error al consultar gastronomía" });
     }
 });
 
+// 2. Obtener un restaurante por su ID y su menú de platos
+const obtenerDetalleRestaurante = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const [restaurantes] = await db.query('SELECT * FROM gastronomia WHERE id = ?', [id]);
+        
+        if (restaurantes.length === 0) {
+            return res.status(404).json({ status: "error", message: "Restaurante no encontrado" });
+        }
+
+        const [platos] = await db.query('SELECT * FROM platos WHERE restaurante_id = ?', [id]);
+
+        const restaurante = restaurantes[0];
+        restaurante.menu = platos;
+
+        res.json({ status: "success", data: restaurante });
+    } catch (error) {
+        console.error("❌ Error al obtener el restaurante:", error);
+        res.status(500).json({ status: "error", message: "Error al consultar la base de datos" });
+    }
+};
+
+app.get(['/api/gastronomia/:id', '/api/restaurantes/:id', '/api/gastronomia/:id/menu', '/api/restaurantes/:id/menu'], obtenerDetalleRestaurante);
+
 app.listen(PORT, () => {
-    console.log(` Servidor de Gastronomía (SaaS) corriendo en http://localhost:${PORT}`);
+    console.log(`🚀 Servidor de Gastronomía corriendo en http://localhost:${PORT}`);
 });

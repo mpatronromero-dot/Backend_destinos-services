@@ -40,7 +40,11 @@ app.use(express.json());
 // Servir la carpeta uploads de manera pública
 app.use('/uploads', express.static(uploadDir));
 
-// Ruta GET: Obtener TODOS los alojamientos
+// ==========================================
+// RUTAS PARA EL CATÁLOGO PÚBLICO
+// ==========================================
+
+// Ruta GET: Obtener TODOS los alojamientos (Para la vista pública de turistas)
 app.get('/api/alojamientos', async (req, res) => {
     try {
         const [rows] = await db.query('SELECT * FROM alojamientos');
@@ -75,15 +79,32 @@ app.get('/api/alojamientos/:id', async (req, res) => {
     }
 });
 
-// Ruta POST: Guardar hotel (con imagen local por Multer)
+// ==========================================
+// RUTAS PARA EL PANEL DE ADMINISTRACIÓN (MULTI-TENANCY)
+// ==========================================
+
+// Ruta GET: Obtener SOLO los alojamientos que pertenecen a un usuario específico
+app.get('/api/alojamientos/mis-alojamientos/:usuarioId', async (req, res) => {
+    try {
+        const { usuarioId } = req.params;
+        const [rows] = await db.query('SELECT * FROM alojamientos WHERE usuario_id = ?', [usuarioId]);
+        res.json({ status: "success", data: rows });
+    } catch (error) {
+        console.error("Error obteniendo mis alojamientos:", error);
+        res.status(500).json({ status: "error", message: "Error al consultar los alojamientos del usuario" });
+    }
+});
+
+// Ruta POST: Guardar hotel con el ID del usuario creador
 app.post('/api/alojamientos', upload.single('imagen'), async (req, res) => {
   try {
-    const { nombre, municipio, tipo, descripcion } = req.body;
+    // Se agrega usuario_id extraído del cuerpo de la petición
+    const { nombre, municipio, tipo, descripcion, usuario_id } = req.body;
     const imagen_url = req.file ? `http://localhost:3002/uploads/${req.file.filename}` : null;
 
     const [result] = await db.query(
-      'INSERT INTO alojamientos (nombre, municipio, tipo, descripcion, imagen_url) VALUES (?, ?, ?, ?, ?)',
-      [nombre, municipio, tipo, descripcion, imagen_url]
+      'INSERT INTO alojamientos (usuario_id, nombre, municipio, tipo, descripcion, imagen_url) VALUES (?, ?, ?, ?, ?, ?)',
+      [usuario_id, nombre, municipio, tipo, descripcion, imagen_url]
     );
 
     res.status(201).json({ status: "success", message: "Guardado exitoso", insertId: result.insertId });
@@ -169,5 +190,5 @@ app.delete('/api/habitaciones/:id', async (req, res) => {
 });
 
 app.listen(PORT, () => {
-    console.log(`Servidor de Alojamientos corriendo en http://localhost:${PORT}`);
+    console.log(`🛌 Servidor de Alojamientos corriendo en http://localhost:${PORT}`);
 });
